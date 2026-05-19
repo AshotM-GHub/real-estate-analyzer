@@ -56,7 +56,7 @@ Rules: all numbers as strings without $ or commas. Estimate if exact data not fo
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25000);
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch("/api/anthropic", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
@@ -477,7 +477,7 @@ Return this JSON with real specific analysis:
 
     let parsed = null;
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/anthropic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
