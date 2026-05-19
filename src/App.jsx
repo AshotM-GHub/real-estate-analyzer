@@ -601,10 +601,10 @@ Return this JSON with real specific analysis:
               <div>
                 <label className="flabel-red">Down Payment</label>
                 <select className="finput-red" style={{cursor:"pointer",color:"#1a1a1a",fontSize:"13px",width:"auto"}} value={mortDown} onChange={e=>setMortDown(e.target.value)}>
-                  <option value="3">3% · ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.03).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
-                  <option value="5">5% · ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.05).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
-                  <option value="10">10% · ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.10).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
-                  <option value="20">20% · ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.20).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="3">3% · $ ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.03).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="5">5% · $ ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.05).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="10">10% · $ ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.10).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="20">20% · $ ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.20).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
                 </select>
               </div>
               <div>
@@ -671,8 +671,8 @@ Return this JSON with real specific analysis:
               <div><label className="flabel-red" style={{fontSize:"9px"}}>Property Tax</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.taxes} onChange={set("taxes")}/></div></div>
               <div><label className="flabel-red" style={{fontSize:"9px"}}>Insurance</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.insurance} onChange={set("insurance")}/></div></div>
               <div><label className="flabel-red" style={{fontSize:"9px"}}>Maintenance</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.maintenance} onChange={set("maintenance")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Vacancy %</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={form.vacancy} onChange={set("vacancy")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Mgmt %</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={form.mgmt} onChange={set("mgmt")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Vacancy %</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={form.vacancy + " %"} onChange={set("vacancy")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Mgmt %</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={form.mgmt + " %"} onChange={set("mgmt")}/></div></div>
               <div><label className="flabel-red" style={{fontSize:"9px"}}>HOA</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.hoa} onChange={set("hoa")}/></div></div>
               <div><label className="flabel-red" style={{fontSize:"9px"}}>Other Expenses</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.otherExpenses} onChange={set("otherExpenses")}/></div></div>
             </div>
