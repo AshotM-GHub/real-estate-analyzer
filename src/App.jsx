@@ -61,7 +61,7 @@ Rules: all numbers as strings without $ or commas. Estimate if exact data not fo
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5-20250929",
         max_tokens: 800,
         system: "You are a real estate data researcher. Return ONLY a raw JSON object. No markdown.",
         messages: [{ role: "user", content: prompt }]
@@ -481,7 +481,7 @@ Return this JSON with real specific analysis:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-5-20250929",
           max_tokens: 1500,
           system: "You are a real estate analyst. Respond ONLY with a raw JSON object. No markdown. No text before or after the JSON.",
           messages: [{ role: "user", content: prompt }]
