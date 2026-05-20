@@ -366,13 +366,15 @@ body{background:#0a0a0f;color:#e8e0d0;font-family:Arial,sans-serif;padding:40px;
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   // Load saved form from localStorage, fall back to empty defaults
-  const saved = (() => { 
-    try { 
-      localStorage.removeItem("pv_form_v3");
-      return null; 
-    } catch { return null; } 
-  })();
-  const [form, setForm]     = useState(DEFAULTS);
+  const saved = (() => {
+  try {
+    return JSON.parse(localStorage.getItem("pv_form_v3")) || null;
+  } catch {
+    return null;
+  }
+})();
+
+const [form, setForm] = useState(saved || DEFAULTS);
   const [phase, setPhase]   = useState("input");
   const [stepIdx, setStep]  = useState(0);
   const [result, setResult] = useState(null);
