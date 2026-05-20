@@ -7,8 +7,8 @@ import {
 // ─── Last entered property (always updated to user's most recent input) ───────
 const DEFAULTS = {
   address: "8915 Odessa Ave, North Hills, CA 91343",
-  price: "1060000", rent: "3500", taxes: "971",
-  insurance: "530", maintenance: "0", vacancy: "4",
+  price: "1060000", rent: "3500", taxes: "11652",
+  insurance: "1800", maintenance: "0", vacancy: "4",
   mgmt: "10", hoa: "0", otherExpenses: "0",
   closingCosts: "2.5"
 };
@@ -38,8 +38,8 @@ Return ONLY a JSON object. No markdown. No explanation. Start with {
 {
   "price": "619888",
   "rent": "3200",
-  "taxes": "568",
-  "insurance": "140",
+  "taxes": "6800",
+  "insurance": "1800",
   "hoa": "300",
   "appreciation_5yr": "45%",
   "appreciation_1yr": "8%",
@@ -50,7 +50,7 @@ Return ONLY a JSON object. No markdown. No explanation. Start with {
   "data_sources": "Zillow, county assessor"
 }
 
-Rules: all numbers as strings without $ or commas. Estimate if exact data not found.`;
+Rules: all numbers as strings without $ or commas. Taxes and insurance MUST be annual values, not monthly. For property tax, use county assessor/public tax data when available; otherwise estimate using the local effective property tax rate. For insurance, estimate annual landlord/homeowner insurance from comparable public market guidance. For vacancy_rate, estimate from zip code/neighborhood rental market sources when exact data is unavailable. Estimate if exact data not found.`;
 
   try {
     const controller = new AbortController();
@@ -101,7 +101,7 @@ function buildFallback(form, f) {
     ptrStatus:      f.ptr < 15 ? "good" : f.ptr < 20 ? "ok" : "bad",
     criteria: [
       { num:"01", name:"Cash Flow",             score:cfS,  detail:`Net cash flow after $${f.mortPayment.toFixed(0)}/mo mortgage is ${cfLabel}. ${cf > 0 ? "Positive — this property pays for itself." : cf > -500 ? "Negative but manageable — requires reserves to cover the monthly shortfall." : "Significantly negative — this deal loses money every month and depends entirely on appreciation."}` },
-      { num:"02", name:"Cap Rate",              score:capS, detail:`Cap rate of ${f.capRate.toFixed(2)}% is ${f.capRate >= 6 ? "within" : f.capRate >= 4 ? "slightly below" : "well below"} the 5–8% investor benchmark. ${f.capRate < 5 ? `Price would need to drop to ~$${Math.round(f.noi/0.05/1000)*1000} to reach a 5% cap rate.` : "Solid return relative to purchase price."}` },
+      { num:"02", name:"Cap Rate",              score:capS, detail:`Cap rate of ${f.capRate.toFixed(2)}% is ${f.capRate >= 6 ? "within" : f.capRate >= 4 ? "slightly below" : "well below"} the 5–8% investor benchmark. ${f.noi <= 0 ? "NOI is negative, so a 5% cap rate is not possible until rent increases or expenses decrease." : f.capRate < 5 ? `Price would need to drop to ~$${Math.round(f.noi/0.05/1000)*1000} to reach a 5% cap rate.` : "Solid return relative to purchase price."}` },
       { num:"03", name:"Location Quality",      score:6,    detail:`${form.address}. Verify proximity to employment, schools and transit. Location quality directly affects vacancy rates and rent growth.` },
       { num:"04", name:"Rental Demand",         score:6,    detail:`Gross yield of ${f.grossYield.toFixed(2)}% suggests ${f.grossYield >= 7 ? "strong" : "moderate"} rental income relative to price. Verify local vacancy rates before committing.` },
       { num:"05", name:"Condition & CapEx",     score:5,    detail:`${f.maint === 0 ? `No maintenance budget entered — add at least $${Math.round(f.price*0.01/12)}/mo (1% of price annually) for capital reserves.` : `$${f.maint}/mo maintenance budgeted. Verify age of roof, HVAC and plumbing.`}` },
@@ -121,15 +121,25 @@ function buildFallback(form, f) {
 const sc = s => s >= 7 ? "#7ac070" : s >= 5 ? "#c9a84c" : "#e06050";
 const vc = s => s >= 7 ? "strong"  : s >= 5 ? "moderate" : "weak";
 const vl = s => s >= 7 ? "Strong Buy" : s >= 5 ? "Proceed with Caution" : "Avoid";
+const n = s => {
+  const match = String(s ?? "").replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+  return match ? parseFloat(match[0]) : 0;
+};
+const money0 = v => Math.round(n(v)).toLocaleString("en-US", { maximumFractionDigits: 0 });
+const yrMoDisplay = v => `$ ${money0(v)}  /  $ ${money0(n(v) / 12)}`;
+const addressMarketLabel = address => {
+  const parts = String(address || "").split(",").map(p => p.trim()).filter(Boolean);
+  return parts.length >= 2 ? parts.slice(-2).join(", ") : (address || "Selected market");
+};
 
 function calcF(form, mortDown="20", mortRate="6.0") {
-  const n = s => parseFloat(String(s).replace(/,/g,"")) || 0;
   const price=n(form.price), rent=n(form.rent), taxes=n(form.taxes),
         ins=n(form.insurance), maint=n(form.maintenance),
         hoa=n(form.hoa), other=n(form.otherExpenses);
-  const vacPct=parseFloat(form.vacancy)||5, mgmtPct=parseFloat(form.mgmt)||10;
+  const vacPct=n(form.vacancy)||5, mgmtPct=n(form.mgmt)||10;
   const vacAmt=(rent*vacPct)/100, mgmtAmt=(rent*mgmtPct)/100;
-  const totalMo=taxes+ins+maint+vacAmt+mgmtAmt+hoa+other;
+  const taxesMo=taxes/12, insMo=ins/12;
+  const totalMo=taxesMo+insMo+maint+vacAmt+mgmtAmt+hoa+other;
   const annRent=rent*12, noi=annRent-totalMo*12;
 
   // Mortgage
@@ -149,7 +159,7 @@ function calcF(form, mortDown="20", mortRate="6.0") {
   const annNOIAfterMort=(monthlyAfterMort)*12;
 
   return {
-    price, rent, taxes, ins, maint, hoa, other, vacAmt, mgmtAmt,
+    price, rent, taxes, ins, taxesMo, insMo, maint, hoa, other, vacAmt, mgmtAmt,
     totalMo, annRent, noi, down, loan, pi, pmi, mortPayment,
     closingAmt, closingPct,
     capRate: price>0?(noi/price)*100:0,
@@ -442,6 +452,8 @@ MONTHLY RENT: $${f.rent.toLocaleString()}
 DOWN PAYMENT: ${mortDown}% ($${f.down.toLocaleString("en-US",{maximumFractionDigits:0})})
 INTEREST RATE: ${mortRate}%
 MORTGAGE PAYMENT: $${f.mortPayment.toFixed(0)}/mo
+PROPERTY TAX: $${f.taxes.toLocaleString("en-US",{maximumFractionDigits:0})}/yr ($${f.taxesMo.toFixed(0)}/mo)
+INSURANCE: $${f.ins.toLocaleString("en-US",{maximumFractionDigits:0})}/yr ($${f.insMo.toFixed(0)}/mo)
 CLOSING COSTS: ${f.closingPct}% ($${f.closingAmt.toLocaleString("en-US",{maximumFractionDigits:0})})
 TOTAL MONTHLY EXPENSES (excl. mortgage): $${f.totalMo.toFixed(0)}
 PRE-MORTGAGE CASH FLOW: $${f.monthlyCF.toFixed(0)}/mo
@@ -461,6 +473,7 @@ LOOKUP DATA FOUND:
 
 IMPORTANT INSTRUCTIONS:
 1. Cash flow score MUST be low (1-4) if net CF is negative
+1A. Property tax and insurance are annual inputs and must be evaluated using their monthly equivalents in cash-flow math.
 2. For Appreciation Potential (07): use your knowledge of the specific zip code and city to provide REAL historical appreciation data — include 5-10yr appreciation %, recent 1yr trend, median home price, rental demand. Score accordingly (>80% 10yr = 9-10, 40-80% = 6-8, <40% = 1-5)
 3. For Location Quality (03): describe the actual neighborhood, nearby employers, schools, transit for THIS specific address
 4. For Rental Demand (04): provide actual vacancy rates and rental market data for this specific zip code
@@ -583,7 +596,7 @@ Return this JSON with real specific analysis:
               {lookupStatus && <div style={{marginTop:"6px",fontSize:"11px",color:"#b8920a",fontFamily:"'DM Mono',monospace",letterSpacing:".08em"}}>{lookupStatus}</div>}
               {lookupData && (
                 <div style={{marginTop:"8px",padding:"10px 14px",background:"#f0fff0",border:"1px solid #a8d5a8",borderRadius:"6px",fontSize:"11px",color:"#1a7a1a",fontFamily:"'DM Mono',monospace",lineHeight:"1.7"}}>
-                  ✓ Data found · Price ${Number(lookupData.price||0).toLocaleString()} · Rent ${lookupData.rent}/mo · Tax ${lookupData.taxes}/mo · HOA ${lookupData.hoa}/mo
+                  ✓ Data found · Price ${Number(lookupData.price||0).toLocaleString()} · Rent ${lookupData.rent}/mo · Tax ${lookupData.taxes}/yr · Insurance ${lookupData.insurance || form.insurance}/yr · HOA ${lookupData.hoa}/mo
                   {lookupData.data_sources && <div style={{color:"#888",marginTop:"3px"}}>Sources: {lookupData.data_sources}</div>}
                 </div>
               )}
@@ -670,13 +683,13 @@ Return this JSON with real specific analysis:
 
             {/* ALL OTHER EXPENSES — red, all same size */}
             <div className="fgrid3" style={{marginTop:"16px"}}>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Property Tax</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.taxes} onChange={set("taxes")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Insurance</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.insurance} onChange={set("insurance")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Maintenance</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.maintenance} onChange={set("maintenance")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Property Tax Yr / Mo</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={yrMoDisplay(form.taxes)} onChange={set("taxes")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Insurance Yr / Mo</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={yrMoDisplay(form.insurance)} onChange={set("insurance")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Maintenance Mo</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.maintenance} onChange={set("maintenance")}/></div></div>
               <div><label className="flabel-red" style={{fontSize:"9px"}}>Vacancy %</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={form.vacancy + " %"} onChange={set("vacancy")}/></div></div>
               <div><label className="flabel-red" style={{fontSize:"9px"}}>Mgmt %</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={form.mgmt + " %"} onChange={set("mgmt")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>HOA</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.hoa} onChange={set("hoa")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Other Expenses</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.otherExpenses} onChange={set("otherExpenses")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>HOA Mo</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.hoa} onChange={set("hoa")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Other Expenses / CapEx Mo</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.otherExpenses} onChange={set("otherExpenses")}/></div></div>
             </div>
 
             <div className="btn-row">
@@ -789,7 +802,7 @@ Return this JSON with real specific analysis:
               },
               {
                 num:"07", name:"Appreciation Potential", score: 10,
-                value:null, target:"ZIP 91204 · Glendale, CA",
+                value:null, target: addressMarketLabel(form.address),
                 def:"How much property values have grown historically in this zip code. Strong past appreciation signals a healthy market.",
                 formula: lookupData ? `+${lookupData.appreciation_5yr||"?"} (5yr) · +${lookupData.appreciation_1yr||"?"} (1yr)\nMedian: ${lookupData.median_home_price||"?"} · Vacancy: ${lookupData.vacancy_rate||"?"}` : `Run Look Up to get real appreciation data for this zip code`,
                 detail: result.criteria.find(c=>c.num==="07")?.detail||""
