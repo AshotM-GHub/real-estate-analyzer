@@ -603,10 +603,10 @@ Return this JSON with real specific analysis:
               <div>
                 <label className="flabel-red">Down Payment</label>
                 <select className="finput-red" style={{cursor:"pointer",color:"#1a1a1a",fontSize:"13px",width:"auto"}} value={mortDown} onChange={e=>setMortDown(e.target.value)}>
-                  <option value="3">3% · $ ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.03).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
-                  <option value="5">5% · $ ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.05).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
-                  <option value="10">10% · $ ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.10).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
-                  <option value="20">20% · $ ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.20).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="3">3% · $ {((parseFloat(String(form.price).replace(/,/g,""))||0)*0.03).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="5">5% · $ {((parseFloat(String(form.price).replace(/,/g,""))||0)*0.05).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="10">10% · $ {((parseFloat(String(form.price).replace(/,/g,""))||0)*0.10).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="20">20% · $ {((parseFloat(String(form.price).replace(/,/g,""))||0)*0.20).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
                 </select>
               </div>
               <div>
