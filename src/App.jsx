@@ -31,7 +31,7 @@ async function lookupProperty(address, setLookupStatus) {
 
   setLookupStatus("Finalizing data...");
 
-  const prompt = `You are a real estate data researcher. Use your training knowledge and web search to find data for: ${address}
+  const prompt = `You are a real estate data researcher. Search the web RIGHT NOW for this exact address: ${address}. Search Zillow, Redfin, and Realtor.com for the current listing price. Use the EXACT price shown on the listing, do NOT estimate or guess.
 
 Return ONLY a JSON object. No markdown. No explanation. Start with {
 
