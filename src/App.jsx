@@ -31,7 +31,7 @@ async function lookupProperty(address, setLookupStatus) {
 
   setLookupStatus("Finalizing data...");
 
-  const prompt = `You are a real estate data researcher. Search the web RIGHT NOW for this exact address: ${address}. Search Zillow, Redfin, and Realtor.com for the current listing price. Use the EXACT price shown on the listing, do NOT estimate or guess.
+  const prompt = `Search Zillow.com, Redfin.com, and Realtor.com RIGHT NOW for this exact property: ${address}. Find the CURRENT listing price. You MUST use web_search tool to find it. Return the EXACT price number from the search results. NEVER estimate or calculate a price.
 
 Return ONLY a JSON object. No markdown. No explanation. Start with {
 
@@ -63,7 +63,7 @@ Rules: all numbers as strings without $ or commas. Taxes and insurance MUST be a
       body: JSON.stringify({
         model: "claude-sonnet-4-5-20250929",
         max_tokens: 800,
-        system: "You are a real estate data researcher. Return ONLY a raw JSON object. No markdown.",
+        system: "You are a real estate data lookup tool. You MUST use web search to find the exact current listing price from Zillow or Redfin. NEVER estimate prices. If you cannot find the exact price from search results, set price to null. Return ONLY raw JSON.",
         messages: [{ role: "user", content: prompt }]
       })
     });
