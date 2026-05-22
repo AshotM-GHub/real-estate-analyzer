@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ReferenceLine, Cell
 } from "recharts";
 
-// ─── Last entered property (always updated to user's most recent input) ───────
+// ─── Last entered property (always updatehd to user's most recent input) ───────
 const DEFAULTS = {
   address: "8915 Odessa Ave, North Hills, CA 91343",
   price: "1060000", rent: "3500", taxes: "11652",
@@ -15,74 +15,33 @@ const DEFAULTS = {
 
 // ─── Auto-lookup: searches web for all property data by address ──────────────
 async function lookupProperty(address, setLookupStatus) {
-  const steps = [
-    "Searching listing price on Zillow/Redfin...",
-    "Checking county assessor for property tax...",
-    "Estimating insurance...",
-    "Finding rental comps nearby...",
-    "Researching zip code appreciation...",
-    "Analyzing neighborhood...",
-  ];
-
-  for (let i = 0; i < steps.length; i++) {
-    setLookupStatus(steps[i]);
-    await new Promise(r => setTimeout(r, 400));
-  }
-
-  setLookupStatus("Finalizing data...");
-
-  const prompt = `Search Zillow.com, Redfin.com, and Realtor.com RIGHT NOW for this exact property: ${address}. Find the CURRENT listing price. You MUST use web_search tool to find it. Return the EXACT price number from the search results. NEVER estimate or calculate a price.
-
-Return ONLY a JSON object. No markdown. No explanation. Start with {
-
-{
-  "price": "619888",
-  "rent": "3200",
-  "taxes": "6800",
-  "insurance": "1800",
-  "hoa": "300",
-  "appreciation_5yr": "45%",
-  "appreciation_1yr": "8%",
-  "median_home_price": "$650,000",
-  "vacancy_rate": "4.2%",
-  "neighborhood_summary": "2-3 sentences about neighborhood, employers, schools, transit",
-  "landlord_law_summary": "1 sentence on landlord laws for this state",
-  "data_sources": "Zillow, county assessor"
-}
-
-Rules: all numbers as strings without $ or commas. Taxes and insurance MUST be annual values, not monthly. For property tax, use county assessor/public tax data when available; otherwise estimate using the local effective property tax rate. For insurance, estimate annual landlord/homeowner insurance from comparable public market guidance. For vacancy_rate, estimate from zip code/neighborhood rental market sources when exact data is unavailable. Estimate if exact data not found.`;
-
+  setLookupStatus('Searching Zillow...');
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
-
-    const res = await fetch("/api/anthropic", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 800,
-        system: "You are a real estate data lookup tool. You MUST use web search to find the exact current listing price from Zillow or Redfin. NEVER estimate prices. If you cannot find the exact price from search results, set price to null. Return ONLY raw JSON.",
-        messages: [{ role: "user", content: prompt }]
-      })
+    const res = await fetch('/api/zillow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address })
     });
-
-    clearTimeout(timeout);
-    if (!res.ok) return null;
     const data = await res.json();
-    if (!data.content?.length) return null;
-
-    const text = data.content.map(b => b.text || "").join("").trim();
-    const clean = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
-    const m = clean.match(/\{[\s\S]*\}/);
-    return m ? JSON.parse(m[0]) : null;
-  } catch (e) {
-    console.error("Lookup failed:", e);
+    if (!res.ok || data.error) throw new Error(data.error || 'Lookup failed');
+    setLookupStatus('Data found from Zillow');
+    return {
+      price: data.price ? String(data.price).replace(/[^0-9]/g, '') : null,
+      rent: data.rent ? String(data.rent).replace(/[^0-9]/g, '') : null,
+      taxes: data.taxes ? String(data.taxes).replace(/[^0-9]/g, '') : null,
+      insurance: null,
+      hoa: data.hoa ? String(data.hoa).replace(/[^0-9]/g, '') : '0',
+      zestimate: data.zestimate || null,
+      beds: data.beds || null,
+      baths: data.baths || null,
+      sqft: data.sqft || null,
+      data_sources: 'Zillow (Apify)'
+    };
+  } catch(e) {
+    setLookupStatus('Lookup failed: ' + e.message);
     return null;
   }
 }
-
 
 function buildFallback(form, f) {
   const cf    = f.monthlyAfterMort; // POST-mortgage cash flow
