@@ -6,7 +6,7 @@ import {
 
 // ─── Last entered property (always updatehd to user's most recent input) ───────
 const DEFAULTS = {
-  address: "8915 Odessa Ave, North Hills, CA 91343",
+  address: "",
   price: "1060000", rent: "3500", taxes: "11652",
   insurance: "1800", maintenance: "0", vacancy: "4",
   mgmt: "10", hoa: "0", otherExpenses: "0",
