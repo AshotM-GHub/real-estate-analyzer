@@ -24,7 +24,7 @@ async function lookupProperty(address, setLookupStatus) {
     });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || 'Lookup failed');
-    setLookupStatus('Data found from Zillow');
+    setLookupStatus('');
     return {
       price: data.price ? String(data.price).replace(/[^0-9]/g, '') : null,
       rent: data.rent ? String(data.rent).replace(/[^0-9]/g, '') : null,
@@ -38,7 +38,7 @@ async function lookupProperty(address, setLookupStatus) {
       data_sources: 'Zillow (Apify)'
     };
   } catch(e) {
-    setLookupStatus('Lookup failed: ' + e.message);
+    setLookupStatus('Live lookup unavailable: ' + e.message);
     return null;
   }
 }
