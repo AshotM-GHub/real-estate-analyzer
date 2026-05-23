@@ -15,30 +15,63 @@ const DEFAULTS = {
 
 // ─── Auto-lookup: searches web for all property data by address ──────────────
 async function lookupProperty(address, setLookupStatus) {
+  const APIFY_TOKEN = import.meta.env.VITE_APIFY_TOKEN;
   setLookupStatus('Searching Zillow...');
   try {
-    const res = await fetch('/api/zillow', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address })
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || 'Lookup failed');
-    setLookupStatus('');
-    return {
-      price: data.price ? String(data.price).replace(/[^0-9]/g, '') : null,
-      rent: data.rent ? String(data.rent).replace(/[^0-9]/g, '') : null,
-      taxes: data.taxes ? String(data.taxes).replace(/[^0-9]/g, '') : null,
-      insurance: null,
-      hoa: data.hoa ? String(data.hoa).replace(/[^0-9]/g, '') : '0',
-      zestimate: data.zestimate || null,
-      beds: data.beds || null,
-      baths: data.baths || null,
-      sqft: data.sqft || null,
-      data_sources: 'Zillow (Apify)'
-    };
+    // Build Zillow search URL
+    const searchQuery = encodeURIComponent(JSON.stringify({
+      pagination: {},
+      filterState: { sort: { value: 'globalrelevanceex' } },
+      isListVisible: true,
+      usersSearchTerm: address
+    }));
+    const zillowUrl = `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/?searchQueryState=${searchQuery}`;
+
+    // Start Apify run directly from frontend
+    const startRes = await fetch(
+      `https://api.apify.com/v2/acts/maxcopell~zillow-scraper/runs?token=${APIFY_TOKEN}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ searchUrls: [{ url: zillowUrl }], maxItems: 5 })
+      }
+    );
+    const runData = await startRes.json();
+    if (!runData.data) throw new Error('Failed to start Apify run');
+    const runId = runData.data.id;
+    const datasetId = runData.data.defaultDatasetId;
+
+    // Poll until done (no timeout on frontend)
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 4000));
+      setLookupStatus(`Searching Zillow... ${(i+1)*4}s`);
+      const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_TOKEN}`);
+      const statusData = await statusRes.json();
+      const status = statusData.data.status;
+      if (status === 'SUCCEEDED') {
+        const itemsRes = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}`);
+        const items = await itemsRes.json();
+        if (!items || !items.length) throw new Error('No listings found');
+        const addrPart = address.toLowerCase().split(',')[0].trim();
+        const match = items.find(p => p.address && p.address.toLowerCase().includes(addrPart)) || items[0];
+        setLookupStatus('');
+        return {
+          price: match.unformattedPrice ? String(match.unformattedPrice) : null,
+          rent: match.rentZestimate ? String(match.rentZestimate) : null,
+          taxes: match.propertyTaxRate ? String(Math.round(match.propertyTaxRate * (match.unformattedPrice||0) / 100)) : null,
+          insurance: null,
+          hoa: match.hoaFee ? String(match.hoaFee) : '0',
+          beds: match.bedrooms || null,
+          baths: match.bathrooms || null,
+          sqft: match.livingArea || null,
+          data_sources: 'Zillow (Apify)'
+        };
+      }
+      if (status === 'FAILED' || status === 'ABORTED') throw new Error('Apify run failed');
+    }
+    throw new Error('Timeout');
   } catch(e) {
-    setLookupStatus('Live lookup unavailable: ' + e.message);
+    setLookupStatus('Lookup failed: ' + e.message);
     return null;
   }
 }
