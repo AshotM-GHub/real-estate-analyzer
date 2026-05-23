@@ -3,54 +3,51 @@ export default async function handler(req, res) {
   const { address } = req.body;
   if (!address) return res.status(400).json({ error: 'Address required' });
 
-  const APIFY_TOKEN = process.env.APIFY_TOKEN;
-
   try {
-    // Use run-sync with short timeout - Apify starts fast
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 55000);
-
-    const searchQuery = encodeURIComponent(JSON.stringify({
+    // Step 1: Search Zillow for the address to get ZPID
+    const searchUrl = `https://www.zillow.com/search/easy-pair/?searchQueryState=${encodeURIComponent(JSON.stringify({
       pagination: {},
+      usersSearchTerm: address,
       filterState: { sort: { value: 'globalrelevanceex' } },
-      isListVisible: true,
-      usersSearchTerm: address
-    }));
-    const zillowUrl = `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/?searchQueryState=${searchQuery}`;
+      isListVisible: true
+    }))}`;
 
-    const response = await fetch(
-      `https://api.apify.com/v2/acts/maxcopell~zillow-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=55&memory=256`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ searchUrls: [{ url: zillowUrl }], maxItems: 5 }),
-        signal: controller.signal
+    const searchRes = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
       }
-    );
-    clearTimeout(timeout);
+    });
 
-    if (!response.ok) {
-      const err = await response.text();
-      return res.status(500).json({ error: 'Apify error: ' + err.substring(0, 200) });
-    }
+    const html = await searchRes.text();
 
-    const items = await response.json();
-    if (!items || items.length === 0) return res.status(404).json({ error: 'No listings found' });
+    // Extract __NEXT_DATA__ which contains all property data
+    const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+    if (!match) return res.status(404).json({ error: 'Could not parse Zillow data' });
 
-    const addr = address.toLowerCase().split(',')[0].toLowerCase();
-    const match = items.find(p => p.address && p.address.toLowerCase().includes(addr)) || items[0];
+    const nextData = JSON.parse(match[1]);
+    const results = nextData?.props?.pageProps?.searchPageState?.cat1?.searchResults?.listResults || [];
+
+    if (!results.length) return res.status(404).json({ error: 'No listings found for this address' });
+
+    // Find best match
+    const addrParts = address.toLowerCase().split(',')[0].trim();
+    const match2 = results.find(p => p.address && p.address.toLowerCase().includes(addrParts)) || results[0];
 
     return res.status(200).json({
-      price: match.unformattedPrice || null,
-      rent: match.rentZestimate || null,
-      zestimate: match.zestimate || null,
-      taxes: match.propertyTaxRate ? Math.round(match.propertyTaxRate * (match.unformattedPrice || 0) / 100) : null,
-      hoa: match.hoaFee || null,
-      beds: match.bedrooms || null,
-      baths: match.bathrooms || null,
-      sqft: match.livingArea || null,
-      address: match.address || null,
-      url: match.url || null
+      price: match2.unformattedPrice || match2.price ? parseInt(String(match2.price || '').replace(/[^0-9]/g, '')) || null : null,
+      rent: match2.rentZestimate || null,
+      zestimate: match2.zestimate || null,
+      taxes: null,
+      hoa: null,
+      beds: match2.beds || null,
+      baths: match2.baths || null,
+      sqft: match2.area || null,
+      address: match2.address || null,
+      url: match2.detailUrl ? 'https://www.zillow.com' + match2.detailUrl : null
     });
 
   } catch (error) {
