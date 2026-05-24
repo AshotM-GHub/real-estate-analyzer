@@ -407,11 +407,11 @@ const [form, setForm] = useState(saved || DEFAULTS);
         setLookupData(data);
         const updated = {
           ...form,
-          price: data.price || form.price,
-          rent: data.rent || form.rent,
-          taxes: data.taxes || form.taxes,
+          price: data.price || "",
+          rent: data.rent || "",
+          taxes: data.taxes || "",
           insurance: data.insurance || form.insurance,
-          hoa: data.hoa || form.hoa,
+          hoa: data.hoa || "",
         };
         setForm(updated);
         try { localStorage.setItem("pv_form_v3", JSON.stringify(updated)); } catch {}
