@@ -18,42 +18,45 @@ async function lookupProperty(address, setLookupStatus) {
   const APIFY_TOKEN = import.meta.env.VITE_APIFY_TOKEN;
   setLookupStatus('Searching Zillow...');
   try {
-    // Build Zillow search URL
-    const searchQuery = encodeURIComponent(JSON.stringify({
+    // Step 1: Geocode address to get lat/lng using free API
+    const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`);
+    const geoData = await geoRes.json();
+    let lat = 34.22, lng = -118.50;
+    if (geoData.length > 0) {
+      lat = parseFloat(geoData[0].lat);
+      lng = parseFloat(geoData[0].lon);
+    }
+    const delta = 0.01;
+    const searchState = encodeURIComponent(JSON.stringify({
       pagination: {},
+      usersSearchTerm: address,
+      mapBounds: { west: lng-delta, east: lng+delta, south: lat-delta, north: lat+delta },
       filterState: { sort: { value: 'globalrelevanceex' } },
       isListVisible: true,
-      usersSearchTerm: address
+      mapZoom: 15
     }));
-    const zillowUrl = `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/?searchQueryState=${searchQuery}`;
+    const zillowUrl = `https://www.zillow.com/search/easy-pair/?searchQueryState=${searchState}`;
 
-    // Start Apify run directly from frontend
     const startRes = await fetch(
       `https://api.apify.com/v2/acts/maxcopell~zillow-scraper/runs?token=${APIFY_TOKEN}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ searchUrls: [{ url: zillowUrl }], maxItems: 5 })
-      }
+      { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ searchUrls: [{ url: zillowUrl }], maxItems: 10 }) }
     );
     const runData = await startRes.json();
-    if (!runData.data) throw new Error('Failed to start Apify run');
+    if (!runData.data) throw new Error('Failed to start run');
     const runId = runData.data.id;
     const datasetId = runData.data.defaultDatasetId;
 
-    // Poll until done (no timeout on frontend)
     for (let i = 0; i < 20; i++) {
       await new Promise(r => setTimeout(r, 4000));
       setLookupStatus(`Searching Zillow... ${(i+1)*4}s`);
-      const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_TOKEN}`);
-      const statusData = await statusRes.json();
-      const status = statusData.data.status;
-      if (status === 'SUCCEEDED') {
-        const itemsRes = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}`);
-        const items = await itemsRes.json();
-        if (!items || !items.length) throw new Error('No listings found');
-        const addrPart = address.toLowerCase().split(',')[0].trim();
-        const match = items.find(p => p.address && p.address.toLowerCase().includes(addrPart)) || items[0];
+      const s = await (await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_TOKEN}`)).json();
+      if (s.data.status === 'SUCCEEDED') {
+        const items = await (await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}`)).json();
+        if (!items || !items.length || items[0].error) throw new Error('No listings found');
+        const streetNum = address.split(' ')[0];
+        const streetName = address.split(' ')[1]?.toLowerCase();
+        const match = items.find(p => p.address && p.address.includes(streetNum) && p.address.toLowerCase().includes(streetName)) || items[0];
         setLookupStatus('');
         return {
           price: match.unformattedPrice ? String(match.unformattedPrice) : null,
@@ -67,7 +70,7 @@ async function lookupProperty(address, setLookupStatus) {
           data_sources: 'Zillow (Apify)'
         };
       }
-      if (status === 'FAILED' || status === 'ABORTED') throw new Error('Apify run failed');
+      if (s.data.status === 'FAILED' || s.data.status === 'ABORTED') throw new Error('Apify run failed');
     }
     throw new Error('Timeout');
   } catch(e) {
