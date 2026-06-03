@@ -72,7 +72,7 @@ CRITICAL: price, rent, taxes, insurance, hoa must be plain numbers only — no $
       },
       signal: controller.signal,
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 800,
         system: "You are a real estate data researcher. Return ONLY a raw JSON object. No markdown.",
         messages: [{ role: "user", content: prompt }]
@@ -500,7 +500,7 @@ Return this JSON with real specific analysis:
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": (import.meta.env.VITE_ANTHROPIC_KEY || ""), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-5",
           max_tokens: 1500,
           system: "You are a real estate analyst. Respond ONLY with a raw JSON object. No markdown. No text before or after the JSON.",
           messages: [{ role: "user", content: prompt }]
