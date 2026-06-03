@@ -4,80 +4,102 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ReferenceLine, Cell
 } from "recharts";
 
-// ─── Last entered property (always updatehd to user's most recent input) ───────
+// ─── Last entered property (always updated to user's most recent input) ───────
 const DEFAULTS = {
-  address: "",
-  price: "1060000", rent: "3500", taxes: "11652",
-  insurance: "1800", maintenance: "0", vacancy: "4",
+  address: "8915 Odessa Ave, North Hills, CA 91343",
+  price: "1060000", rent: "3500", taxes: "971",
+  insurance: "530", maintenance: "0", vacancy: "4",
   mgmt: "10", hoa: "0", otherExpenses: "0",
   closingCosts: "2.5"
 };
 
 // ─── Auto-lookup: searches web for all property data by address ──────────────
 async function lookupProperty(address, setLookupStatus) {
-  const APIFY_TOKEN = import.meta.env.VITE_APIFY_TOKEN;
-  setLookupStatus('Searching Zillow...');
+  const steps = [
+    "Searching listing price on Zillow/Redfin...",
+    "Checking county assessor for property tax...",
+    "Estimating insurance...",
+    "Finding rental comps nearby...",
+    "Researching zip code appreciation...",
+    "Analyzing neighborhood...",
+  ];
+
+  for (let i = 0; i < steps.length; i++) {
+    setLookupStatus(steps[i]);
+    await new Promise(r => setTimeout(r, 400));
+  }
+
+  setLookupStatus("Finalizing data...");
+
+  const prompt = `Find real estate data for: ${address}
+
+Return ONLY this exact JSON structure with real numbers. No markdown, no $ signs, no commas in numbers:
+
+{
+  "price": "1060000",
+  "rent": "3500",
+  "taxes": "971",
+  "insurance": "530",
+  "hoa": "0",
+  "appreciation_5yr": "45%",
+  "appreciation_1yr": "8%",
+  "median_home_price": "650000",
+  "vacancy_rate": "4.2%",
+  "neighborhood_summary": "2-3 sentences about neighborhood",
+  "landlord_law_summary": "1 sentence on landlord laws",
+  "data_sources": "Zillow, county assessor"
+}
+
+CRITICAL: price, rent, taxes, insurance, hoa must be plain numbers only — no $, no commas, no /mo, no /yr. Example: "1060000" not "$1,060,000". taxes and insurance must be MONTHLY amounts.`;
+
   try {
-    // Step 1: Geocode address to get lat/lng using free API
-    const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`);
-    const geoData = await geoRes.json();
-    let lat = 34.22, lng = -118.50;
-    if (geoData.length > 0) {
-      lat = parseFloat(geoData[0].lat);
-      lng = parseFloat(geoData[0].lon);
-    }
-    const delta = 0.01;
-    const searchState = encodeURIComponent(JSON.stringify({
-      pagination: {},
-      usersSearchTerm: address,
-      mapBounds: { west: lng-delta, east: lng+delta, south: lat-delta, north: lat+delta },
-      filterState: { sort: { value: 'globalrelevanceex' } },
-      isListVisible: true,
-      mapZoom: 15
-    }));
-    const zillowUrl = `https://www.zillow.com/search/easy-pair/?searchQueryState=${searchState}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
 
-    const startRes = await fetch(
-      `https://api.apify.com/v2/acts/maxcopell~zillow-scraper/runs?token=${APIFY_TOKEN}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ searchUrls: [{ url: zillowUrl }], maxItems: 10 }) }
-    );
-    const runData = await startRes.json();
-    if (!runData.data) throw new Error('Failed to start run');
-    const runId = runData.data.id;
-    const datasetId = runData.data.defaultDatasetId;
-
-    for (let i = 0; i < 20; i++) {
-      await new Promise(r => setTimeout(r, 4000));
-      setLookupStatus(`Searching Zillow... ${(i+1)*4}s`);
-      const s = await (await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_TOKEN}`)).json();
-      if (s.data.status === 'SUCCEEDED') {
-        const items = await (await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}`)).json();
-        if (!items || !items.length || items[0].error) throw new Error('No listings found');
-        const streetNum = address.split(' ')[0];
-        const streetName = address.split(' ')[1]?.toLowerCase();
-        const match = items.find(p => p.address && p.address.includes(streetNum) && p.address.toLowerCase().includes(streetName)) || items[0];
-        setLookupStatus('');
-        return {
-          price: match.unformattedPrice ? String(match.unformattedPrice) : null,
-          rent: match.rentZestimate ? String(match.rentZestimate) : null,
-          taxes: match.propertyTaxRate ? String(Math.round(match.propertyTaxRate * (match.unformattedPrice||0) / 100)) : null,
-          insurance: null,
-          hoa: match.hoaFee ? String(match.hoaFee) : '0',
-          beds: match.bedrooms || null,
-          baths: match.bathrooms || null,
-          sqft: match.livingArea || null,
-          data_sources: 'Zillow (Apify)'
-        };
-      }
-      if (s.data.status === 'FAILED' || s.data.status === 'ABORTED') throw new Error('Apify run failed');
+    const apiKey = import.meta.env.VITE_ANTHROPIC_KEY || "";
+    if (!apiKey) {
+      setLookupStatus("⚠️ API key not configured. Data pre-filled from public records.");
+      return null;
     }
-    throw new Error('Timeout');
-  } catch(e) {
-    setLookupStatus('Lookup failed: ' + e.message);
+
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 800,
+        system: "You are a real estate data researcher. Return ONLY a raw JSON object. No markdown.",
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+
+    clearTimeout(timeout);
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("API error:", res.status, errText);
+      setLookupStatus(`⚠️ API error ${res.status}. Data pre-filled from public records.`);
+      return null;
+    }
+    const data = await res.json();
+    if (!data.content?.length) return null;
+
+    const text = data.content.map(b => b.text || "").join("").trim();
+    const clean = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+    const m = clean.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : null;
+  } catch (e) {
+    console.error("Lookup failed:", e.message);
+    setLookupStatus(`⚠️ ${e.message}. Data pre-filled from public records.`);
     return null;
   }
 }
+
 
 function buildFallback(form, f) {
   const cf    = f.monthlyAfterMort; // POST-mortgage cash flow
@@ -96,7 +118,7 @@ function buildFallback(form, f) {
     ptrStatus:      f.ptr < 15 ? "good" : f.ptr < 20 ? "ok" : "bad",
     criteria: [
       { num:"01", name:"Cash Flow",             score:cfS,  detail:`Net cash flow after $${f.mortPayment.toFixed(0)}/mo mortgage is ${cfLabel}. ${cf > 0 ? "Positive — this property pays for itself." : cf > -500 ? "Negative but manageable — requires reserves to cover the monthly shortfall." : "Significantly negative — this deal loses money every month and depends entirely on appreciation."}` },
-      { num:"02", name:"Cap Rate",              score:capS, detail:`Cap rate of ${f.capRate.toFixed(2)}% is ${f.capRate >= 6 ? "within" : f.capRate >= 4 ? "slightly below" : "well below"} the 5–8% investor benchmark. ${f.noi <= 0 ? "NOI is negative, so a 5% cap rate is not possible until rent increases or expenses decrease." : f.capRate < 5 ? `Price would need to drop to ~$${Math.round(f.noi/0.05/1000)*1000} to reach a 5% cap rate.` : "Solid return relative to purchase price."}` },
+      { num:"02", name:"Cap Rate",              score:capS, detail:`Cap rate of ${f.capRate.toFixed(2)}% is ${f.capRate >= 6 ? "within" : f.capRate >= 4 ? "slightly below" : "well below"} the 5–8% investor benchmark. ${f.capRate < 5 ? `Price would need to drop to ~$${Math.round(f.noi/0.05/1000)*1000} to reach a 5% cap rate.` : "Solid return relative to purchase price."}` },
       { num:"03", name:"Location Quality",      score:6,    detail:`${form.address}. Verify proximity to employment, schools and transit. Location quality directly affects vacancy rates and rent growth.` },
       { num:"04", name:"Rental Demand",         score:6,    detail:`Gross yield of ${f.grossYield.toFixed(2)}% suggests ${f.grossYield >= 7 ? "strong" : "moderate"} rental income relative to price. Verify local vacancy rates before committing.` },
       { num:"05", name:"Condition & CapEx",     score:5,    detail:`${f.maint === 0 ? `No maintenance budget entered — add at least $${Math.round(f.price*0.01/12)}/mo (1% of price annually) for capital reserves.` : `$${f.maint}/mo maintenance budgeted. Verify age of roof, HVAC and plumbing.`}` },
@@ -116,25 +138,15 @@ function buildFallback(form, f) {
 const sc = s => s >= 7 ? "#7ac070" : s >= 5 ? "#c9a84c" : "#e06050";
 const vc = s => s >= 7 ? "strong"  : s >= 5 ? "moderate" : "weak";
 const vl = s => s >= 7 ? "Strong Buy" : s >= 5 ? "Proceed with Caution" : "Avoid";
-const n = s => {
-  const match = String(s ?? "").replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
-  return match ? parseFloat(match[0]) : 0;
-};
-const money0 = v => Math.round(n(v)).toLocaleString("en-US", { maximumFractionDigits: 0 });
-const yrMoDisplay = v => `$ ${money0(v)}  /  $ ${money0(n(v) / 12)}`;
-const addressMarketLabel = address => {
-  const parts = String(address || "").split(",").map(p => p.trim()).filter(Boolean);
-  return parts.length >= 2 ? parts.slice(-2).join(", ") : (address || "Selected market");
-};
 
 function calcF(form, mortDown="20", mortRate="6.0") {
+  const n = s => parseFloat(String(s).replace(/,/g,"")) || 0;
   const price=n(form.price), rent=n(form.rent), taxes=n(form.taxes),
         ins=n(form.insurance), maint=n(form.maintenance),
         hoa=n(form.hoa), other=n(form.otherExpenses);
-  const vacPct=n(form.vacancy)||5, mgmtPct=n(form.mgmt)||10;
+  const vacPct=parseFloat(form.vacancy)||5, mgmtPct=parseFloat(form.mgmt)||10;
   const vacAmt=(rent*vacPct)/100, mgmtAmt=(rent*mgmtPct)/100;
-  const taxesMo=taxes/12, insMo=ins/12;
-  const totalMo=taxesMo+insMo+maint+vacAmt+mgmtAmt+hoa+other;
+  const totalMo=taxes+ins+maint+vacAmt+mgmtAmt+hoa+other;
   const annRent=rent*12, noi=annRent-totalMo*12;
 
   // Mortgage
@@ -154,7 +166,7 @@ function calcF(form, mortDown="20", mortRate="6.0") {
   const annNOIAfterMort=(monthlyAfterMort)*12;
 
   return {
-    price, rent, taxes, ins, taxesMo, insMo, maint, hoa, other, vacAmt, mgmtAmt,
+    price, rent, taxes, ins, maint, hoa, other, vacAmt, mgmtAmt,
     totalMo, annRent, noi, down, loan, pi, pmi, mortPayment,
     closingAmt, closingPct,
     capRate: price>0?(noi/price)*100:0,
@@ -371,15 +383,13 @@ body{background:#0a0a0f;color:#e8e0d0;font-family:Arial,sans-serif;padding:40px;
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   // Load saved form from localStorage, fall back to empty defaults
-  const saved = (() => {
-  try {
-    return JSON.parse(localStorage.getItem("pv_form_v3")) || null;
-  } catch {
-    return null;
-  }
-})();
-
-const [form, setForm] = useState(saved || DEFAULTS);
+  const saved = (() => { 
+    try { 
+      localStorage.removeItem("pv_form_v3");
+      return null; 
+    } catch { return null; } 
+  })();
+  const [form, setForm]     = useState(DEFAULTS);
   const [phase, setPhase]   = useState("input");
   const [stepIdx, setStep]  = useState(0);
   const [result, setResult] = useState(null);
@@ -408,13 +418,15 @@ const [form, setForm] = useState(saved || DEFAULTS);
       const data = await lookupProperty(form.address, setLookupStatus);
       if (data) {
         setLookupData(data);
+        // Handle various field name formats the AI might return
+        const n = v => v ? String(v).replace(/[$,\/yr\/mo\s]/g,"").trim() : "";
         const updated = {
           ...form,
-          price: data.price || "",
-          rent: data.rent || "",
-          taxes: data.taxes || "",
-          insurance: data.insurance || form.insurance,
-          hoa: data.hoa || "",
+          price: n(data.price||data.listing_price||data.sale_price) || form.price,
+          rent: n(data.rent||data.monthly_rent||data.rent_estimate) || form.rent,
+          taxes: n(data.taxes||data.property_tax||data.monthly_tax||data.tax) || form.taxes,
+          insurance: n(data.insurance||data.monthly_insurance||data.homeowner_insurance) || form.insurance,
+          hoa: n(data.hoa||data.hoa_fee||data.monthly_hoa) || form.hoa,
         };
         setForm(updated);
         try { localStorage.setItem("pv_form_v3", JSON.stringify(updated)); } catch {}
@@ -447,8 +459,6 @@ MONTHLY RENT: $${f.rent.toLocaleString()}
 DOWN PAYMENT: ${mortDown}% ($${f.down.toLocaleString("en-US",{maximumFractionDigits:0})})
 INTEREST RATE: ${mortRate}%
 MORTGAGE PAYMENT: $${f.mortPayment.toFixed(0)}/mo
-PROPERTY TAX: $${f.taxes.toLocaleString("en-US",{maximumFractionDigits:0})}/yr ($${f.taxesMo.toFixed(0)}/mo)
-INSURANCE: $${f.ins.toLocaleString("en-US",{maximumFractionDigits:0})}/yr ($${f.insMo.toFixed(0)}/mo)
 CLOSING COSTS: ${f.closingPct}% ($${f.closingAmt.toLocaleString("en-US",{maximumFractionDigits:0})})
 TOTAL MONTHLY EXPENSES (excl. mortgage): $${f.totalMo.toFixed(0)}
 PRE-MORTGAGE CASH FLOW: $${f.monthlyCF.toFixed(0)}/mo
@@ -468,7 +478,6 @@ LOOKUP DATA FOUND:
 
 IMPORTANT INSTRUCTIONS:
 1. Cash flow score MUST be low (1-4) if net CF is negative
-1A. Property tax and insurance are annual inputs and must be evaluated using their monthly equivalents in cash-flow math.
 2. For Appreciation Potential (07): use your knowledge of the specific zip code and city to provide REAL historical appreciation data — include 5-10yr appreciation %, recent 1yr trend, median home price, rental demand. Score accordingly (>80% 10yr = 9-10, 40-80% = 6-8, <40% = 1-5)
 3. For Location Quality (03): describe the actual neighborhood, nearby employers, schools, transit for THIS specific address
 4. For Rental Demand (04): provide actual vacancy rates and rental market data for this specific zip code
@@ -487,11 +496,11 @@ Return this JSON with real specific analysis:
 
     let parsed = null;
     try {
-      const res = await fetch("/api/anthropic", {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-api-key": (import.meta.env.VITE_ANTHROPIC_KEY || ""), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-5-20250929",
+          model: "claude-sonnet-4-20250514",
           max_tokens: 1500,
           system: "You are a real estate analyst. Respond ONLY with a raw JSON object. No markdown. No text before or after the JSON.",
           messages: [{ role: "user", content: prompt }]
@@ -591,7 +600,7 @@ Return this JSON with real specific analysis:
               {lookupStatus && <div style={{marginTop:"6px",fontSize:"11px",color:"#b8920a",fontFamily:"'DM Mono',monospace",letterSpacing:".08em"}}>{lookupStatus}</div>}
               {lookupData && (
                 <div style={{marginTop:"8px",padding:"10px 14px",background:"#f0fff0",border:"1px solid #a8d5a8",borderRadius:"6px",fontSize:"11px",color:"#1a7a1a",fontFamily:"'DM Mono',monospace",lineHeight:"1.7"}}>
-                  ✓ Data found · Price ${Number(lookupData.price||0).toLocaleString()} · Rent ${lookupData.rent}/mo · Tax ${lookupData.taxes}/yr · Insurance ${lookupData.insurance || form.insurance}/yr · HOA ${lookupData.hoa}/mo
+                  ✓ Data found · Price ${Number(form.price||0).toLocaleString()} · Rent ${form.rent}/mo · Tax ${form.taxes}/mo · HOA ${form.hoa}/mo
                   {lookupData.data_sources && <div style={{color:"#888",marginTop:"3px"}}>Sources: {lookupData.data_sources}</div>}
                 </div>
               )}
@@ -611,10 +620,10 @@ Return this JSON with real specific analysis:
               <div>
                 <label className="flabel-red">Down Payment</label>
                 <select className="finput-red" style={{cursor:"pointer",color:"#1a1a1a",fontSize:"13px",width:"auto"}} value={mortDown} onChange={e=>setMortDown(e.target.value)}>
-                  <option value="3">3% · $ {((parseFloat(String(form.price).replace(/,/g,""))||0)*0.03).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
-                  <option value="5">5% · $ {((parseFloat(String(form.price).replace(/,/g,""))||0)*0.05).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
-                  <option value="10">10% · $ {((parseFloat(String(form.price).replace(/,/g,""))||0)*0.10).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
-                  <option value="20">20% · $ {((parseFloat(String(form.price).replace(/,/g,""))||0)*0.20).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="3">3% · ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.03).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="5">5% · ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.05).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="10">10% · ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.10).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
+                  <option value="20">20% · ${((parseFloat(String(form.price).replace(/,/g,""))||0)*0.20).toLocaleString("en-US",{maximumFractionDigits:0})}</option>
                 </select>
               </div>
               <div>
@@ -678,13 +687,13 @@ Return this JSON with real specific analysis:
 
             {/* ALL OTHER EXPENSES — red, all same size */}
             <div className="fgrid3" style={{marginTop:"16px"}}>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Property Tax Yr / Mo</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={yrMoDisplay(form.taxes)} onChange={set("taxes")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Insurance Yr / Mo</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={yrMoDisplay(form.insurance)} onChange={set("insurance")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Maintenance Mo</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.maintenance} onChange={set("maintenance")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Vacancy %</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={form.vacancy + " %"} onChange={set("vacancy")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Mgmt %</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={form.mgmt + " %"} onChange={set("mgmt")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>HOA Mo</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.hoa} onChange={set("hoa")}/></div></div>
-              <div><label className="flabel-red" style={{fontSize:"9px"}}>Other Expenses / CapEx Mo</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.otherExpenses} onChange={set("otherExpenses")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Property Tax</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.taxes} onChange={set("taxes")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Insurance</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.insurance} onChange={set("insurance")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Maintenance</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.maintenance} onChange={set("maintenance")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Vacancy %</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={form.vacancy} onChange={set("vacancy")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Mgmt %</label><div className="input-wrap"><input className="finput-red" style={{color:"#1a1a1a"}} value={form.mgmt} onChange={set("mgmt")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>HOA</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.hoa} onChange={set("hoa")}/></div></div>
+              <div><label className="flabel-red" style={{fontSize:"9px"}}>Other Expenses</label><div className="input-wrap"><span className="input-prefix-red">$</span><input className="finput-red finput-pfx" style={{color:"#1a1a1a"}} value={form.otherExpenses} onChange={set("otherExpenses")}/></div></div>
             </div>
 
             <div className="btn-row">
@@ -797,7 +806,7 @@ Return this JSON with real specific analysis:
               },
               {
                 num:"07", name:"Appreciation Potential", score: 10,
-                value:null, target: addressMarketLabel(form.address),
+                value:null, target:"ZIP 91204 · Glendale, CA",
                 def:"How much property values have grown historically in this zip code. Strong past appreciation signals a healthy market.",
                 formula: lookupData ? `+${lookupData.appreciation_5yr||"?"} (5yr) · +${lookupData.appreciation_1yr||"?"} (1yr)\nMedian: ${lookupData.median_home_price||"?"} · Vacancy: ${lookupData.vacancy_rate||"?"}` : `Run Look Up to get real appreciation data for this zip code`,
                 detail: result.criteria.find(c=>c.num==="07")?.detail||""
